@@ -9,13 +9,13 @@
 
 
 // Callback methods prototypes
-void t1100Hz();
+void t_100Hz_Event();
 void t2Callback();
 void t3Callback();
 void t4Callback();
 
 //Tasks
-Task t1(1000/100, TASK_FOREVER, &t1100Hz);
+Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
 Task t2(1000/20, TASK_FOREVER, &t2Callback);
 Task t3(1000, TASK_FOREVER, &t3Callback);
 Task t4(1, TASK_ONCE, &t4Callback);
@@ -51,11 +51,11 @@ unsigned char DATA0x500[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 
 
-void t1100Hz() {
+void t_100Hz_Event() {
     CAN_SEND.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
     SERIAL_PORT_MONITOR.println("CAN BUS sendMsgBuf ok!");
 
-    Serial.print("t1: ");
+    Serial.print("t_100Hz: ");
     Serial.println(millis());
 
 
@@ -100,8 +100,8 @@ void setup() {
     runner.init();
     Serial.println("Initialized scheduler");
     
-    runner.addTask(t1);
-    Serial.println("added t1");
+    runner.addTask(t_100Hz);
+    Serial.println("added t_100Hz");
     
     runner.addTask(t2);
     Serial.println("added t2");
@@ -114,8 +114,8 @@ void setup() {
 
     delay(5000);
     
-    t1.enable();
-    Serial.println("Enabled t1 as 100Hz Event");
+    t_100Hz.enable();
+    Serial.println("Enabled t_100Hz as 100Hz Event");
     t2.enable();
     Serial.println("Enabled t2 as 10Hz Event");
     t3.enable();   
