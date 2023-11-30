@@ -4,8 +4,11 @@
 */
 
 #include <SPI.h>
-#include "mcp2518fd_can.h"
+#include "mcp2515_can.h"
 #include <TaskScheduler.h>
+
+
+#define SERIAL Serial
 
 
 // Callback methods prototypes
@@ -25,22 +28,18 @@ Scheduler scheduler;
 
 
 // Set SPI CS Pin according to your hardware
-// For Wio Terminal w/ MCP2518FD RPi Hat：
-// Channel 0 SPI_CS Pin: BCM 8
-// Channel 1 SPI_CS Pin: BCM 7
-// Interupt Pin: BCM25
-// *****************************************
 // For Arduino MCP2515 Hat:
 // SPI_CS Pin: D9
 
-const int SPI_CS_PIN_SEND = 9;
-const int SPI_CS_PIN_RECEIVE = 10;
+const int SPI_CS_PIN = 9;
 
-mcp2518fd CAN_SEND(SPI_CS_PIN_SEND);
-mcp2518fd CAN_RECEIVE(SPI_CS_PIN_RECEIVE);
+mcp2515_can CAN(SPI_CS_PIN); // Set CS pin
 
 unsigned char len = 0;
 unsigned char buf[8];
+
+
+
 
 //Data of IDs to send
 
@@ -84,18 +83,17 @@ void setup() {
     t_Startup.enable();
     Serial.println("Enabled t_Startup as Single Event");
 
-    // digital pin 2 used to interrupt code if an incomming message is detected
-    attachInterrupt(digitalPinToInterrupt(2), CANrxInterrupt, FALLING);
 
     // Initialise and setup CAN-Bus controller
-    SERIAL_PORT_MONITOR.begin(115200);
+    SERIAL.begin(115200);
     while(!Serial); // wait for Serial
 
-    if (CAN_SEND.begin(CAN_500K_1M) != 0 || CAN_RECEIVE.begin(CAN_500K_1M) != 0) {
-      SERIAL_PORT_MONITOR.println("CAN-BUS initiliased error!");
-      while(1);
+    while (CAN_OK != CAN.begin(CAN_500KBPS)) {             // init can bus : baudrate = 500k
+        SERIAL.println("CAN BUS Shield init fail");
+        SERIAL.println(" Init CAN BUS Shield again");
+        delay(100);
     }
-    
+
     /* 
         set mask, set both the mask to 0x3ff
     */
@@ -113,17 +111,20 @@ void setup() {
     CAN.init_Filt(3, 0, 0x07);                          // there are 6 filter in mcp2515
     CAN.init_Filt(4, 0, 0x08);                          // there are 6 filter in mcp2515
     CAN.init_Filt(5, 0, 0x09);                          // there are 6 filter in mcp2515
+    SERIAL.println("CAN init ok!");
 }
 
-    SERIAL_PORT_MONITOR.println("CAN init ok!");
-
-
+    
 
 
 
 void loop() {
-
-  scheduler.execute();
+    if (CAN_MSGAVAIL == CAN.checkReceive())
+    {
+        /* code */
+    }
+    
+    scheduler.execute();
 
 }
 
@@ -176,9 +177,8 @@ void t_Startup_Event() {
 */
 /**************************************************************************/
 void t_100Hz_Event() {
-    CAN_SEND.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
-    SERIAL_PORT_MONITOR.println("CAN BUS sendMsgBuf ok!");
-    CAN_SEND.sendMsgBuf()
+    CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
+    SERIAL.println("CAN BUS sendMsgBuf ok!");
     Serial.print("t_100Hz: ");
     Serial.println(millis());
      
@@ -195,7 +195,7 @@ void t_100Hz_Event() {
 */
 /**************************************************************************/
 void t_20Hz_Event() {
-    CAN_SEND.sendMsgBuf(0x500, 0, 8, DATA0x500);
+    CAN.sendMsgBuf(0x500, 0, 8, DATA0x500);
     SERIAL_PORT_MONITOR.println("CAN BUS sendMsgBuf ok!");
 
     Serial.print("t_20Hz: ");
