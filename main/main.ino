@@ -48,11 +48,38 @@ unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 //Bat control 20 Hz
 unsigned char DATA0x500[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
+//IDs to recive
+/*
+const int eBoster_h = 0x06b;
+const int eBooster_l = 0x17b;
+const int Batt_Data2 = 0x631;
+const int Batt_Data1 = 0x630;
+const int Batt_PWR10 = 0x621;
+*/
 
+enum RxId {
+    eBooster_h = 0x06b,
+    eBooster_l = 0x17b,
+    Batt_Data2 = 0x631,
+    Batt_Data1 = 0x630,
+    Batt_PWR10 = 0x621
+};
 
+class ebooster {
+    public:
+       double I_act;
+       double U_act;
+       double T_act;
+       double n_act;   
+       boolean Fault;  
+};
+
+ebooster eBooster; 
 
 
 void setup() {
+
+    eBooster.Fault = false;
 
     Serial.begin(115200);
     Serial.println("Scheduler TEST");
@@ -97,31 +124,36 @@ void setup() {
     /* 
         set mask, set both the mask to 0x3ff
     */
-    CAN.init_Mask(0, 0, 0x3ff);                         // there are 2 mask in mcp2515, we need to set both of them
+    CAN.init_Mask(0, 0, 0x3ff);                         // there are 2 mask in mcp2515, we need to set both of them to recive all
     CAN.init_Mask(1, 0, 0x3ff);
 
 
     /*
         set filter for all id's we will recive
+        there are 6 filter in mcp2515
     */
-    CAN.init_Filt(0, 0, 0x06b);                         // filters the id with eBooster act. Values
-    CAN.init_Filt(1, 0, 0x05);                          // there are 6 filter in mcp2515
+    CAN.init_Filt(0, 0, eBooster_h);                         // eBooster act. Values (RPM, Current....)
+    CAN.init_Filt(1, 0, Batt_Data2);                         // Battery Data 2 CB State, Temp....
 
-    CAN.init_Filt(2, 0, 0x06);                          // there are 6 filter in mcp2515
-    CAN.init_Filt(3, 0, 0x07);                          // there are 6 filter in mcp2515
-    CAN.init_Filt(4, 0, 0x08);                          // there are 6 filter in mcp2515
-    CAN.init_Filt(5, 0, 0x09);                          // there are 6 filter in mcp2515
+    CAN.init_Filt(2, 0, Batt_PWR10);                         // Battery 10s available charge/discaharge power 
+    CAN.init_Filt(3, 0, Batt_Data1);                         // Battery Data 1 Current, Voltage
+    CAN.init_Filt(4, 0, eBooster_l);                         // eBooster Temp and Voltage
+
     SERIAL.println("CAN init ok!");
-}
 
-    
+
+ }
+
+  
 
 
 
 void loop() {
+
+    
     if (CAN_MSGAVAIL == CAN.checkReceive())
     {
-        /* code */
+        CanRxInterrupt();
     }
     
     scheduler.execute();
@@ -146,12 +178,46 @@ void CanRxInterrupt() {
     unsigned char buf[8];
     unsigned long canId = CAN.getCanId();
     CAN.readMsgBuf(&len, buf);
+    
 
-    // Verarbeite die empfangenen Daten
-    processIncomingData(buf, len);
+    // Process the recived data
+    switch (canId)
+    {
+    case eBooster_h:
+        eBooster.n_act = ((buf[3] & 0x03) << 8) | buf[4];
+        break;
+    
+    case eBooster_l:
+        /* code */
+        break;
+
+    case Batt_Data1:
+        /* code */
+        break;
+    
+    case Batt_Data2:
+        /* code */
+        break;
+
+    case Batt_PWR10:
+        /* code */
+        break;
+    
+    default:
+        break;
+    }
   }
 }
 
+
+
+/**************************************************************************/
+/*!
+    @brief    Process the recived data if 0x06b is recived
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
 
 
 /**************************************************************************/
