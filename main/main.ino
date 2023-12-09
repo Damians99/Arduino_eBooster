@@ -10,19 +10,22 @@
 
 #define SERIAL Serial
 
+//Global variabels from i/o pins
+int n_requested;
+
 
 // Callback methods prototypes
 void t_Startup_Event();
 void t_100Hz_Event();
 void t_20Hz_Event();
-void t3Callback();
+void t_5Hz_Event();
 
 
 //Tasks
 Task t_Startup(1, TASK_ONCE, &t_Startup_Event);
 Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
 Task t_20Hz(1000/20, TASK_FOREVER, &t_20Hz_Event);
-Task t3(1000, TASK_FOREVER, &t3Callback);
+Task t_5Hz(1000, TASK_FOREVER, &t_5Hz_Event);
 
 Scheduler scheduler;
 
@@ -71,15 +74,32 @@ class ebooster {
        double U_act;
        double T_act;
        double n_act;   
-       boolean Fault;  
+       bool Fault;  
 };
 
 ebooster eBooster; 
+
+class bat48V {
+    public:
+       double I_act;
+       double I_dschrg_avail;
+       double I_chrg_avail;
+       double U_cells;
+       double U_terminal;
+       double T_act;
+       double SOC;
+       int CB_State;
+       bool Fault;  
+};
+
+bat48V Bat48V; 
 
 
 void setup() {
 
     eBooster.Fault = false;
+    Bat48V.Fault = false;
+
 
     Serial.begin(115200);
     Serial.println("Scheduler TEST");
@@ -93,8 +113,8 @@ void setup() {
     scheduler.addTask(t_20Hz);
     Serial.println("added t_20Hz");
 
-    scheduler.addTask(t3);
-    Serial.println("added t3");
+    scheduler.addTask(t_5Hz);
+    Serial.println("added t_5Hz");
     
     scheduler.addTask(t_Startup);
     Serial.println("added t_Startup");
@@ -105,8 +125,8 @@ void setup() {
     Serial.println("Enabled t_100Hz as 100Hz Event");
     t_20Hz.enable();
     Serial.println("Enabled t_20Hz as 10Hz Event");
-    t3.enable();   
-    Serial.println("Enabled t3 as 1Hz Event");
+    t_5Hz.enable();   
+    Serial.println("Enabled t_5Hz as 1Hz Event");
     t_Startup.enable();
     Serial.println("Enabled t_Startup as Single Event");
 
@@ -184,23 +204,33 @@ void CanRxInterrupt() {
     switch (canId)
     {
     case eBooster_h:
-        eBooster.n_act = ((buf[3] & 0x03) << 8) | buf[4];
+        eBooster.n_act = (((buf[3] & 0x03) << 8) | buf[4]) * 100;
+        eBooster.I_act = buf[4];
+        eBooster.Fault = buf[0] < 0 || buf[1] < 0;
         break;
     
     case eBooster_l:
-        /* code */
+        eBooster.T_act = (buf[2] - 32) * 5 / 9;
+        eBooster.U_act = buf[3] * 0.251256;
         break;
 
     case Batt_Data1:
-        /* code */
+        Bat48V.U_cells = ((buf[0] << 8) | buf[1]) * 0.001;
+        Bat48V.U_terminal = ((buf[2] << 8) | buf[3]) * 0.001;
+        Bat48V.I_act = ((buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7]) * 0.001;
         break;
     
     case Batt_Data2:
-        /* code */
+        int temp1 = ((buf[0] & 0x07) << 8) | buf[1];
+        int temp2 = ((buf[2] & 0x07) << 8) | buf[3];
+        Bat48V.T_act = max(temp1, temp2) * 0.1;
+        Bat48V.SOC = buf[6];
+        Bat48V.CB_State = buf[0] & 0xC0; 
         break;
 
     case Batt_PWR10:
-        /* code */
+        Bat48V.I_chrg_avail = (buf[0] << 2) | (((buf[1] & 0xC0)) >> 6);
+        Bat48V.I_dschrg_avail = (buf[3] << 2) | (((buf[4] & 0xC0)) >> 6)
         break;
     
     default:
@@ -210,14 +240,6 @@ void CanRxInterrupt() {
 }
 
 
-
-/**************************************************************************/
-/*!
-    @brief    Process the recived data if 0x06b is recived
-    @param    none
-    @returns  none
-*/
-/**************************************************************************/
 
 
 /**************************************************************************/
@@ -278,12 +300,11 @@ void t_20Hz_Event() {
     @returns  none
 */
 /**************************************************************************/
-void t3Callback() {
-    Serial.print("t3: ");
-    Serial.println(millis());
-  
+void t_5Hz_Event() {
+    n_requested = analogRead(A0);
+    n_requested = n_requested / 1023 * 70000 / 100;       //Read poti value and convert it to requested eBooster RPM
+    DATA0x06d[2]  = (n_requested & 0x300) >> 8;
+    DATA0x06d[3]  = (n_requested & 0xFF);
 }
-
-
 
 // END FILE
