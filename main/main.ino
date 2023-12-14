@@ -8,7 +8,7 @@
 #include <TaskScheduler.h>
 
 
-#define Serial SERIAL
+#define SERIAL Serial
 
 //Global variabels from i/o pins
 int n_requested;
@@ -94,9 +94,6 @@ void setup() {
     Bat48V.Fault = false;
 
 
-    SERIAL.begin(115200);
-    while(!SERIAL); // wait for SERIAL
-
     SERIAL.println("Scheduler TEST");
     
     scheduler.init();
@@ -109,7 +106,7 @@ void setup() {
     SERIAL.println("added t_20Hz");
 
     scheduler.addTask(t_5Hz);
-    SERIAL.println("added t_5Hz");
+    Serial.println("added t_5Hz");
     
     scheduler.addTask(t_Startup);
     SERIAL.println("added t_Startup");
@@ -119,9 +116,9 @@ void setup() {
     t_100Hz.enable();
     SERIAL.println("Enabled t_100Hz as 100Hz Event");
     t_20Hz.enable();
-    SERIAL.println("Enabled t_20Hz as 10Hz Event");
+    Serial.println("Enabled t_20Hz as 10Hz Event");
     t_5Hz.enable();   
-    SERIAL.println("Enabled t_5Hz as 1Hz Event");
+    Serial.println("Enabled t_5Hz as 1Hz Event");
     t_Startup.enable();
     SERIAL.println("Enabled t_Startup as Single Event");
 
@@ -291,12 +288,10 @@ void t_20Hz_Event() {
     @returns  none
 */
 /**************************************************************************/
-void t_5Hz_Event() {
-    n_requested = analogRead(A0);
-    n_requested = n_requested / 1023 * 70000 / 100;       //Read poti value and convert it to requested eBooster RPM
-    DATA0x06d[2]  = (n_requested & 0x300) >> 8;
-    DATA0x06d[3]  = (n_requested & 0xFF);
-    SERIAL.println("Pin read ok!");
+void t3Callback() {
+    Serial.print("t3: ");
+    Serial.println(millis());
+  
 }
 
 // END FILE
