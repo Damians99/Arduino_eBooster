@@ -8,7 +8,6 @@
 #include <TaskScheduler.h>
 
 
-#define SERIAL Serial
 
 //Global variabels from i/o pins
 int n_requested;
@@ -24,8 +23,8 @@ void t_5Hz_Event();
 //Tasks
 Task t_Startup(1, TASK_ONCE, &t_Startup_Event);
 Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
-Task t_20Hz(1000/20, TASK_FOREVER, &t_20Hz_Event);
-Task t_5Hz(1000, TASK_FOREVER, &t_5Hz_Event);
+Task t_20Hz(1000/2, TASK_FOREVER, &t_20Hz_Event);
+Task t_5Hz(1000/5, TASK_FOREVER, &t_5Hz_Event);
 
 Scheduler scheduler;
 
@@ -52,13 +51,6 @@ unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 unsigned char DATA0x500[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 //IDs to recive
-/*
-const int eBoster_h = 0x06b;
-const int eBooster_l = 0x17b;
-const int Batt_Data2 = 0x631;
-const int Batt_Data1 = 0x630;
-const int Batt_PWR10 = 0x621;
-*/
 
 enum RxId {
     eBooster_h = 0x06b,
@@ -122,22 +114,19 @@ void setup() {
     delay(1000);
     
     t_100Hz.enable();
-    Serial.println("Enabled t_100Hz as 100Hz Event");
     t_20Hz.enable();
-    Serial.println("Enabled t_20Hz as 10Hz Event");
     t_5Hz.enable();   
-    Serial.println("Enabled t_5Hz as 1Hz Event");
     t_Startup.enable();
-    Serial.println("Enabled t_Startup as Single Event");
+    Serial.println("All Tasks enabled");
 
 
     // Initialise and setup CAN-Bus controller
-    SERIAL.begin(115200);
+    Serial.begin(115200);
     while(!Serial); // wait for Serial
 
     while (CAN_OK != CAN.begin(CAN_500KBPS)) {             // init can bus : baudrate = 500k
-        SERIAL.println("CAN BUS Shield init fail");
-        SERIAL.println(" Init CAN BUS Shield again");
+        Serial.println("CAN BUS Shield init fail");
+        Serial.println(" Init CAN BUS Shield again");
         delay(100);
     }
 
@@ -159,7 +148,7 @@ void setup() {
     CAN.init_Filt(3, 0, Batt_Data1);                         // Battery Data 1 Current, Voltage
     CAN.init_Filt(4, 0, eBooster_l);                         // eBooster Temp and Voltage
 
-    SERIAL.println("CAN init ok!");
+    Serial.println("CAN init ok!");
 
 
  }
@@ -170,11 +159,11 @@ void setup() {
 
 void loop() {
 
-    
     if (CAN_MSGAVAIL == CAN.checkReceive())
     {
         CanRxInterrupt();
     }
+    
     
     scheduler.execute();
 
@@ -207,11 +196,13 @@ void CanRxInterrupt() {
         eBooster.n_act = (((buf[3] & 0x03) << 8) | buf[4]) * 100;
         eBooster.I_act = buf[4];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
+        Serial.println("RX--------------------------MSG");
         break;
     
     case eBooster_l:
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
         eBooster.U_act = buf[3] * 0.251256;
+        Serial.println("RXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMSG");
         break;
 
     case Batt_Data1:
@@ -230,7 +221,7 @@ void CanRxInterrupt() {
 
     case Batt_PWR10:
         Bat48V.I_chrg_avail = (buf[0] << 2) | (((buf[1] & 0xC0)) >> 6);
-        Bat48V.I_dschrg_avail = (buf[3] << 2) | (((buf[4] & 0xC0)) >> 6)
+        Bat48V.I_dschrg_avail = (buf[3] << 2) | (((buf[4] & 0xC0)) >> 6);
         break;
     
     default:
@@ -266,7 +257,7 @@ void t_Startup_Event() {
 /**************************************************************************/
 void t_100Hz_Event() {
     CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
-    SERIAL.println("CAN BUS sendMsgBuf ok!");
+    Serial.println("CAN BUS sendMsgBuf ok!");
     Serial.print("t_100Hz: ");
     Serial.println(millis());
      
@@ -284,7 +275,7 @@ void t_100Hz_Event() {
 /**************************************************************************/
 void t_20Hz_Event() {
     CAN.sendMsgBuf(0x500, 0, 8, DATA0x500);
-    SERIAL_PORT_MONITOR.println("CAN BUS sendMsgBuf ok!");
+    Serial.println("CAN BUS sendMsgBuf ok!");
 
     Serial.print("t_20Hz: ");
     Serial.println(millis());

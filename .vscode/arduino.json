@@ -1,4 +1,6 @@
 {
     "board": "arduino:avr:uno",
-    "port": "COM5"
+    "port": "COM6",
+    "programmer": "avrisp",
+    "sketch": "main\\main.ino"
 }
