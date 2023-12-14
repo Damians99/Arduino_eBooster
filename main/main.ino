@@ -52,6 +52,13 @@ unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 unsigned char DATA0x500[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 //IDs to recive
+/*
+const int eBoster_h = 0x06b;
+const int eBooster_l = 0x17b;
+const int Batt_Data2 = 0x631;
+const int Batt_Data1 = 0x630;
+const int Batt_PWR10 = 0x621;
+*/
 
 enum RxId {
     eBooster_h = 0x06b,
@@ -94,38 +101,40 @@ void setup() {
     Bat48V.Fault = false;
 
 
-    SERIAL.println("Scheduler TEST");
+    Serial.begin(115200);
+    Serial.println("Scheduler TEST");
     
     scheduler.init();
-    SERIAL.println("Initialized scheduler");
+    Serial.println("Initialized scheduler");
     
     scheduler.addTask(t_100Hz);
-    SERIAL.println("added t_100Hz");
+    Serial.println("added t_100Hz");
     
     scheduler.addTask(t_20Hz);
-    SERIAL.println("added t_20Hz");
+    Serial.println("added t_20Hz");
 
     scheduler.addTask(t_5Hz);
     Serial.println("added t_5Hz");
     
     scheduler.addTask(t_Startup);
-    SERIAL.println("added t_Startup");
+    Serial.println("added t_Startup");
 
-    delay(500);
+    delay(1000);
     
     t_100Hz.enable();
-    SERIAL.println("Enabled t_100Hz as 100Hz Event");
+    Serial.println("Enabled t_100Hz as 100Hz Event");
     t_20Hz.enable();
     Serial.println("Enabled t_20Hz as 10Hz Event");
     t_5Hz.enable();   
     Serial.println("Enabled t_5Hz as 1Hz Event");
     t_Startup.enable();
-    SERIAL.println("Enabled t_Startup as Single Event");
+    Serial.println("Enabled t_Startup as Single Event");
 
 
     // Initialise and setup CAN-Bus controller
-    SERIAL.println("Start initialize MCP2515 CAN-Shield")
-    
+    SERIAL.begin(115200);
+    while(!Serial); // wait for Serial
+
     while (CAN_OK != CAN.begin(CAN_500KBPS)) {             // init can bus : baudrate = 500k
         SERIAL.println("CAN BUS Shield init fail");
         SERIAL.println(" Init CAN BUS Shield again");
@@ -151,6 +160,8 @@ void setup() {
     CAN.init_Filt(4, 0, eBooster_l);                         // eBooster Temp and Voltage
 
     SERIAL.println("CAN init ok!");
+
+
  }
 
   
@@ -181,6 +192,7 @@ void loop() {
 /**************************************************************************/
 
 void CanRxInterrupt() {
+ 
   while (CAN_MSGAVAIL == CAN.checkReceive()) {
     unsigned char len;
     unsigned char buf[8];
@@ -238,8 +250,8 @@ void CanRxInterrupt() {
 */
 /**************************************************************************/
 void t_Startup_Event() {
-    SERIAL.println("t_Startup: ");
-    SERIAL.print(millis());
+    Serial.print("t_Startup: ");
+    Serial.println(millis());
   
 }
 
@@ -247,17 +259,16 @@ void t_Startup_Event() {
 
 /**************************************************************************/
 /*!
-    @brief    Callback method of task t_100Hz_Event - Can id's that will be 
-              sent with a Frequence of 100Hz
+    @brief    Callback method of task2 - explain
     @param    none
     @returns  none
 */
 /**************************************************************************/
 void t_100Hz_Event() {
     CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
-    SERIAL.println("CAN BUS 0x06d sendMsgBuf ok!");
-    SERIAL.println("t_100Hz: ");
-    SERIAL.print(millis());
+    SERIAL.println("CAN BUS sendMsgBuf ok!");
+    Serial.print("t_100Hz: ");
+    Serial.println(millis());
      
 }
 
@@ -273,25 +284,27 @@ void t_100Hz_Event() {
 /**************************************************************************/
 void t_20Hz_Event() {
     CAN.sendMsgBuf(0x500, 0, 8, DATA0x500);
-    SERIAL.println("CAN BUS 0x500 sendMsgBuf ok!");
-    SERIAL.println("t_20Hz: ");
-    SERIAL.print(millis());
+    SERIAL_PORT_MONITOR.println("CAN BUS sendMsgBuf ok!");
+
+    Serial.print("t_20Hz: ");
+    Serial.println(millis());
+
 }
 
 
 
 /**************************************************************************/
 /*!
-    @brief    Callback method of task t_5Hz_Event - Used for User inputs/Pin reads with a 
-              Frequence of 5 Hz.
+    @brief    Callback method of task3 - explain
     @param    none
     @returns  none
 */
 /**************************************************************************/
-void t3Callback() {
-    Serial.print("t3: ");
-    Serial.println(millis());
-  
+void t_5Hz_Event() {
+    n_requested = analogRead(A0);
+    n_requested = n_requested / 1023 * 70000 / 100;       //Read poti value and convert it to requested eBooster RPM
+    DATA0x06d[2]  = (n_requested & 0x300) >> 8;
+    DATA0x06d[3]  = (n_requested & 0xFF);
 }
 
 // END FILE
