@@ -22,7 +22,7 @@ void t_5Hz_Event();
 
 //Tasks
 Task t_Startup(1, TASK_ONCE, &t_Startup_Event);
-Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
+Task t_100Hz(1000/1, TASK_FOREVER, &t_100Hz_Event);
 Task t_20Hz(1000/2, TASK_FOREVER, &t_20Hz_Event);
 Task t_5Hz(1000/5, TASK_FOREVER, &t_5Hz_Event);
 
