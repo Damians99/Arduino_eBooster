@@ -22,8 +22,8 @@ void t_5Hz_Event();
 
 //Tasks
 Task t_Startup(1, TASK_ONCE, &t_Startup_Event);
-Task t_100Hz(1000/1, TASK_FOREVER, &t_100Hz_Event);
-Task t_20Hz(1000/2, TASK_FOREVER, &t_20Hz_Event);
+Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
+Task t_20Hz(1000/20, TASK_FOREVER, &t_20Hz_Event);
 Task t_5Hz(1000/5, TASK_FOREVER, &t_5Hz_Event);
 
 Scheduler scheduler;
@@ -114,10 +114,10 @@ void setup() {
     delay(1000);
     
     t_100Hz.enable();
-    t_20Hz.enable();
+    //t_20Hz.enable();
     t_5Hz.enable();   
-    t_Startup.enable();
-    Serial.println("All Tasks enabled");
+    //t_Startup.enable();
+    //Serial.println("All Tasks enabled");
 
 
     // Initialise and setup CAN-Bus controller
@@ -159,9 +159,10 @@ void setup() {
 
 void loop() {
 
-    if (CAN_MSGAVAIL == CAN.checkReceive())
+    while (CAN_MSGAVAIL == CAN.checkReceive())
     {
         CanRxInterrupt();
+        //Serial.println("MSG detectet on RX");
     }
     
     
@@ -182,27 +183,29 @@ void loop() {
 
 void CanRxInterrupt() {
  
-  while (CAN_MSGAVAIL == CAN.checkReceive()) {
     unsigned char len;
     unsigned char buf[8];
     unsigned long canId = CAN.getCanId();
     CAN.readMsgBuf(&len, buf);
+
+    Serial.println(canId, HEX);
     
 
     // Process the recived data
     switch (canId)
     {
     case eBooster_h:
-        eBooster.n_act = (((buf[3] & 0x03) << 8) | buf[4]) * 100;
-        eBooster.I_act = buf[4];
+        eBooster.n_act = (((buf[4] & 0x03) << 8) | buf[3]) * 100;
+        eBooster.I_act = buf[5];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
-        Serial.println("RX--------------------------MSG");
+        //Serial.println("RX--------------------------MSG");
+        //Serial.println(eBooster.n_act);
         break;
     
     case eBooster_l:
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
         eBooster.U_act = buf[3] * 0.251256;
-        Serial.println("RXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMSG");
+        //Serial.println("RXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMSG");
         break;
 
     case Batt_Data1:
@@ -226,8 +229,8 @@ void CanRxInterrupt() {
     
     default:
         break;
+
     }
-  }
 }
 
 
@@ -241,6 +244,7 @@ void CanRxInterrupt() {
 */
 /**************************************************************************/
 void t_Startup_Event() {
+
     Serial.print("t_Startup: ");
     Serial.println(millis());
   
@@ -256,10 +260,11 @@ void t_Startup_Event() {
 */
 /**************************************************************************/
 void t_100Hz_Event() {
+
     CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
-    Serial.println("CAN BUS sendMsgBuf ok!");
-    Serial.print("t_100Hz: ");
-    Serial.println(millis());
+    //Serial.println("CAN BUS sendMsgBuf ok!");
+    //Serial.print("t_100Hz: ");
+    //Serial.println(millis());
      
 }
 
@@ -274,11 +279,11 @@ void t_100Hz_Event() {
 */
 /**************************************************************************/
 void t_20Hz_Event() {
-    CAN.sendMsgBuf(0x500, 0, 8, DATA0x500);
-    Serial.println("CAN BUS sendMsgBuf ok!");
 
-    Serial.print("t_20Hz: ");
-    Serial.println(millis());
+    CAN.sendMsgBuf(0x500, 0, 8, DATA0x500);
+    //Serial.println("CAN BUS sendMsgBuf ok!");
+    //Serial.print("t_20Hz: ");
+    //Serial.println(millis());
 
 }
 
@@ -292,10 +297,12 @@ void t_20Hz_Event() {
 */
 /**************************************************************************/
 void t_5Hz_Event() {
-    n_requested = analogRead(A0);
-    n_requested = n_requested / 1023 * 70000 / 100;       //Read poti value and convert it to requested eBooster RPM
-    DATA0x06d[2]  = (n_requested & 0x300) >> 8;
-    DATA0x06d[3]  = (n_requested & 0xFF);
+    int n_requested_raw = analogRead(A0);
+    n_requested = round((float)n_requested_raw / 1023 * 72000 / 100);       //Read poti value and convert it to requested eBooster RPM
+
+    DATA0x06d[2]  = (n_requested) & 0xFF;
+    DATA0x06d[3]  = (n_requested >> 8) & 0x03;
+
 }
 
 // END FILE
