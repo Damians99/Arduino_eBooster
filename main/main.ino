@@ -21,10 +21,10 @@ void t_5Hz_Event();
 
 
 //Tasks
-Task t_Startup(1, TASK_ONCE, &t_Startup_Event);
-Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
-Task t_20Hz(1000/20, TASK_FOREVER, &t_20Hz_Event);
-Task t_5Hz(1000/5, TASK_FOREVER, &t_5Hz_Event);
+//Task t_Startup(1, TASK_ONCE, &t_Startup_Event);
+//Task t_100Hz(1000/100, TASK_FOREVER, &t_100Hz_Event);
+//Task t_20Hz(1000/20, TASK_FOREVER, &t_20Hz_Event);
+//Task t_5Hz(1000/5, TASK_FOREVER, &t_5Hz_Event);
 
 Scheduler scheduler;
 
@@ -96,28 +96,28 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Scheduler TEST");
     
-    scheduler.init();
+    //scheduler.init();
     Serial.println("Initialized scheduler");
     
-    scheduler.addTask(t_100Hz);
+    //scheduler.addTask(t_100Hz);
     Serial.println("added t_100Hz");
     
-    scheduler.addTask(t_20Hz);
+    //scheduler.addTask(t_20Hz);
     Serial.println("added t_20Hz");
 
-    scheduler.addTask(t_5Hz);
+    //scheduler.addTask(t_5Hz);
     Serial.println("added t_5Hz");
     
-    scheduler.addTask(t_Startup);
+    //scheduler.addTask(t_Startup);
     Serial.println("added t_Startup");
 
     delay(1000);
     
-    t_100Hz.enable();
-    t_20Hz.enable();
-    t_5Hz.enable();   
-    t_Startup.enable();
-    Serial.println("All Tasks enabled");
+    //t_100Hz.enable();
+    //t_20Hz.enable();
+    //t_5Hz.enable();   
+    //t_Startup.enable();
+    //Serial.println("All Tasks enabled");
 
 
     // Initialise and setup CAN-Bus controller
@@ -150,11 +150,16 @@ void setup() {
 
     Serial.println("CAN init ok!");
 
+    t_Startup_Event();
 
  }
 
   
+//init millis
 
+unsigned long t_100Hz = millis() + 10;
+unsigned long t_20Hz = millis() + 50;
+unsigned long t_5Hz = millis() + 250;
 
 
 void loop() {
@@ -164,9 +169,27 @@ void loop() {
         CanRxInterrupt();
         //Serial.println("MSG detectet on RX");
     }
-    
-    
-    scheduler.execute();
+     
+    if (millis() >= t_100Hz)
+    {
+        t_100Hz_Event();
+        t_100Hz += 10;
+    }
+
+
+        if (millis() >= t_20Hz)
+    {
+        t_20Hz_Event();
+        t_20Hz += 50;
+    }
+
+    if (millis() >= t_5Hz)
+    {   
+        t_5Hz_Event();
+        t_5Hz += 250;
+    }
+
+    //scheduler.execute();
 
 }
 
