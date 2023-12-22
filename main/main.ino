@@ -114,10 +114,10 @@ void setup() {
     delay(1000);
     
     t_100Hz.enable();
-    //t_20Hz.enable();
+    t_20Hz.enable();
     t_5Hz.enable();   
-    //t_Startup.enable();
-    //Serial.println("All Tasks enabled");
+    t_Startup.enable();
+    Serial.println("All Tasks enabled");
 
 
     // Initialise and setup CAN-Bus controller
@@ -127,7 +127,7 @@ void setup() {
     while (CAN_OK != CAN.begin(CAN_500KBPS)) {             // init can bus : baudrate = 500k
         Serial.println("CAN BUS Shield init fail");
         Serial.println(" Init CAN BUS Shield again");
-        delay(100);
+        delay(1000);
     }
 
     /* 
@@ -182,10 +182,10 @@ void loop() {
 /**************************************************************************/
 
 void CanRxInterrupt() {
- 
+
+    unsigned int canId = CAN.getCanId();
     unsigned char len;
     unsigned char buf[8];
-    unsigned long canId = CAN.getCanId();
     CAN.readMsgBuf(&len, buf);
 
     Serial.println(canId, HEX);
@@ -198,14 +198,14 @@ void CanRxInterrupt() {
         eBooster.n_act = (((buf[4] & 0x03) << 8) | buf[3]) * 100;
         eBooster.I_act = buf[5];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
-        //Serial.println("RX--------------------------MSG");
-        //Serial.println(eBooster.n_act);
+        Serial.println("RX--------------------------MSG");
+        Serial.println(eBooster.n_act);
         break;
     
     case eBooster_l:
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
         eBooster.U_act = buf[3] * 0.251256;
-        //Serial.println("RXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMSG");
+        Serial.println("RXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMSG");
         break;
 
     case Batt_Data1:
