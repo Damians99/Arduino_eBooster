@@ -1,4 +1,3 @@
-
 /*
     This is a periodicaly can bus message sender script with Interrupt Reading
 */
@@ -204,15 +203,22 @@ void loop() {
 */
 /**************************************************************************/
 
-void CanRxInterrupt() {
+ void CanRxInterrupt() {
 
-    unsigned int canId = CAN.getCanId();
+    //unsigned int canId;
     unsigned char len;
     unsigned char buf[8];
-    CAN.readMsgBuf(&len, buf);
+    //CAN.readMsgBufID(canId, len, buf);
+    //canId = CAN.getCanId();
+    
+    CAN.readMsgBuf(&len, buf);   
+    unsigned int canId = CAN.getCanId();
+
 
     Serial.println(canId, HEX);
-    
+    Serial.println(buf[0]);
+    Serial.println();
+
 
     // Process the recived data
     switch (canId)
