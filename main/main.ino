@@ -181,14 +181,18 @@ void loop() {
 */
 /**************************************************************************/
 
-void CanRxInterrupt() {
+void CanRxInterrupt(void) {
 
-    unsigned int canId = CAN.getCanId();
+
     unsigned char len;
     unsigned char buf[8];
-    CAN.readMsgBuf(&len, buf);
+    unsigned int canId;
 
-    Serial.println(canId, HEX);
+
+    CAN.readMsgBuf(&len, buf);
+    canId = CAN.getCanId();
+
+    //Serial.println(canId, HEX);
     
 
     // Process the recived data
@@ -198,14 +202,13 @@ void CanRxInterrupt() {
         eBooster.n_act = (((buf[4] & 0x03) << 8) | buf[3]) * 100;
         eBooster.I_act = buf[5];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
-        Serial.println("RX--------------------------MSG");
+        Serial.println("n eBooster = ");
         Serial.println(eBooster.n_act);
         break;
     
     case eBooster_l:
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
         eBooster.U_act = buf[3] * 0.251256;
-        Serial.println("RXXXXXXXXXXXXXXXXXXXXXXXXXXXXXMSG");
         break;
 
     case Batt_Data1:
