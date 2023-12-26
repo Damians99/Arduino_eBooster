@@ -1,4 +1,7 @@
 {
     "board": "arduino:avr:uno",
-    "port": "COM5"
+    "port": "COM6",
+    "programmer": "avrisp",
+    "sketch": "main\\main.ino",
+    "output": "C:/Users/damia/Documents/Arduino/ArduinoOutput"
 }
