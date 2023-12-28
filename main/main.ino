@@ -62,10 +62,10 @@ enum RxId {
 
 class ebooster {
     public:
-       double I_act;
-       double U_act;
-       double T_act;
-       double n_act;   
+       float I_act;
+       float U_act;
+       float T_act;
+       long n_act;   
        bool Fault;  
 };
 
@@ -73,13 +73,13 @@ ebooster eBooster;
 
 class bat48V {
     public:
-       double I_act;
-       double I_dschrg_avail;
-       double I_chrg_avail;
-       double U_cells;
-       double U_terminal;
-       double T_act;
-       double SOC;
+       float I_act;
+       float I_dschrg_avail;
+       float I_chrg_avail;
+       float U_cells;
+       float U_terminal;
+       float T_act;
+       float SOC;
        int CB_State;
        bool Fault;  
 };
@@ -199,16 +199,22 @@ void CanRxInterrupt(void) {
     switch (canId)
     {
     case eBooster_h:
-        eBooster.n_act = (((buf[4] & 0x03) << 8) | buf[3]) * 100;
+        int RPM_Conv_Factor = 100;
+
+        eBooster.n_act = (( (long)(buf[4] & 0x03) << 8) | (long)buf[3]) * RPM_Conv_Factor;
         eBooster.I_act = buf[5];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
-        Serial.println("n eBooster = ");
-        Serial.println(eBooster.n_act);
+
+        //Serial.println("n eBooster = ");
+        //Serial.println(eBooster.n_act);
+
         break;
     
     case eBooster_l:
+        float U_Conv_Factor = 0.251256;
+
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
-        eBooster.U_act = buf[3] * 0.251256;
+        eBooster.U_act = buf[3] * U_Conv_Factor;
         break;
 
     case Batt_Data1:
@@ -218,9 +224,11 @@ void CanRxInterrupt(void) {
         break;
     
     case Batt_Data2:
-        int temp1 = ((buf[0] & 0x07) << 8) | buf[1];
-        int temp2 = ((buf[2] & 0x07) << 8) | buf[3];
-        Bat48V.T_act = max(temp1, temp2) * 0.1;
+        float T_Conv_Factor = 0.1;
+
+        int temp1 = ((int)(buf[0] & 0x07) << 8) | (int)buf[1];
+        int temp2 = ((int)(buf[2] & 0x07) << 8) | (int)buf[3];
+        Bat48V.T_act = max(temp1, temp2) * T_Conv_Factor;
         Bat48V.SOC = buf[6];
         Bat48V.CB_State = buf[0] & 0xC0; 
         break;
@@ -300,6 +308,16 @@ void t_20Hz_Event() {
 */
 /**************************************************************************/
 void t_5Hz_Event() {
+    
+    /*
+    const int ANALOG_Max_Value = 1023;
+    const int RPM_Max_Value = 72000;
+    const int RPM_Conv_Factor = 100;
+
+    int n_requested_raw = analogRead(A0);
+    n_requested = round((float)n_requested_raw / ANALOG_Max_Value * RPM_Max_Value / RPM_Conv_Factor); 
+    */
+
     int n_requested_raw = analogRead(A0);
     n_requested = round((float)n_requested_raw / 1023 * 72000 / 100);       //Read poti value and convert it to requested eBooster RPM
 
