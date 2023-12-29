@@ -8,6 +8,8 @@
 #include <TaskScheduler.h>
 
 
+#define POTI_READ A0
+#define DCDC_RELAY A1
 
 //Global variabels from i/o pins
 int n_requested;
@@ -55,36 +57,35 @@ unsigned char DATA0x500[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 enum RxId {
     eBooster_h = 0x06b,
     eBooster_l = 0x17b,
-    Batt_Data2 = 0x631,
     Batt_Data1 = 0x630,
+    Batt_Data2 = 0x631,
     Batt_PWR10 = 0x621
 };
 
-class ebooster {
-    public:
-       float I_act;
-       float U_act;
-       float T_act;
-       long n_act;   
-       bool Fault;  
+struct ebooster {
+    float I_act;
+    float U_act;
+    float T_act;
+    long n_act;   
+    bool Fault;  
 };
 
 ebooster eBooster; 
 
-class bat48V {
-    public:
-       float I_act;
-       float I_dschrg_avail;
-       float I_chrg_avail;
-       float U_cells;
-       float U_terminal;
-       float T_act;
-       float SOC;
-       int CB_State;
-       bool Fault;  
+struct bat48V {
+    float I_act;
+    float I_dschrg_avail;
+    float I_chrg_avail;
+    float U_cells;
+    float U_terminal;
+    float T_act;
+    float SOC;
+    int CB_State;
+    bool Fault;
 };
 
-bat48V Bat48V; 
+bat48V Bat48V;
+
 
 
 void setup() {
@@ -127,7 +128,7 @@ void setup() {
     while (CAN_OK != CAN.begin(CAN_500KBPS)) {             // init can bus : baudrate = 500k
         Serial.println("CAN BUS Shield init fail");
         Serial.println(" Init CAN BUS Shield again");
-        delay(1000);
+        delay(500);
     }
 
     /* 
@@ -149,7 +150,6 @@ void setup() {
     CAN.init_Filt(4, 0, eBooster_l);                         // eBooster Temp and Voltage
 
     Serial.println("CAN init ok!");
-
 
  }
 
@@ -199,9 +199,9 @@ void CanRxInterrupt(void) {
     switch (canId)
     {
     case eBooster_h:
-        int RPM_Conv_Factor = 100;
+        const int RPM_Conv_Factor = 100;
 
-        eBooster.n_act = (( (long)(buf[4] & 0x03) << 8) | (long)buf[3]) * RPM_Conv_Factor;
+        eBooster.n_act = (( (unsigned long)(buf[4] & 0x03) << 8) | (unsigned long)buf[3]) * RPM_Conv_Factor;
         eBooster.I_act = buf[5];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
 
@@ -211,31 +211,35 @@ void CanRxInterrupt(void) {
         break;
     
     case eBooster_l:
-        float U_Conv_Factor = 0.251256;
+        const float U_Conv_Factor = 0.251256f;
 
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
         eBooster.U_act = buf[3] * U_Conv_Factor;
         break;
 
     case Batt_Data1:
-        Bat48V.U_cells = ((buf[0] << 8) | buf[1]) * 0.001;
-        Bat48V.U_terminal = ((buf[2] << 8) | buf[3]) * 0.001;
-        Bat48V.I_act = ((buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | buf[7]) * 0.001;
+        const float UI_Conv_Factor = 0.001f;
+
+        Bat48V.U_cells = ( ((unsigned int)buf[0] << 8) | (unsigned int)buf[1]) * UI_Conv_Factor;
+        Bat48V.U_terminal = ( ((unsigned int)buf[2] << 8) | (unsigned int)buf[3]) * UI_Conv_Factor;
+        Bat48V.I_act = ( ((unsigned long)buf[4] << 24) | ((unsigned long)buf[5] << 16) | 
+                         ((unsigned long)buf[6] << 8)  | (unsigned long)buf[7]) * UI_Conv_Factor;
         break;
     
     case Batt_Data2:
-        float T_Conv_Factor = 0.1;
+        const float T_Conv_Factor = 0.1f;
 
-        int temp1 = ((int)(buf[0] & 0x07) << 8) | (int)buf[1];
-        int temp2 = ((int)(buf[2] & 0x07) << 8) | (int)buf[3];
+        int temp1 = ((unsigned int)(buf[0] & 0x07) << 8) | (unsigned int)buf[1];
+        int temp2 = ((unsigned int)(buf[2] & 0x07) << 8) | (unsigned int)buf[3];
         Bat48V.T_act = max(temp1, temp2) * T_Conv_Factor;
         Bat48V.SOC = buf[6];
-        Bat48V.CB_State = buf[0] & 0xC0; 
+        Bat48V.CB_State = buf[0] & 0xC0;
+        Serial.println("0x631 read");
         break;
 
     case Batt_PWR10:
-        Bat48V.I_chrg_avail = (buf[0] << 2) | (((buf[1] & 0xC0)) >> 6);
-        Bat48V.I_dschrg_avail = (buf[3] << 2) | (((buf[4] & 0xC0)) >> 6);
+        Bat48V.I_chrg_avail = ((unsigned int)buf[0] << 2) | ((unsigned int)(buf[1] & 0xC0) >> 6);
+        Bat48V.I_dschrg_avail = ((unsigned int)buf[3] << 2) | ((unsigned int)(buf[4] & 0xC0) >> 6);
         break;
     
     default:
@@ -295,7 +299,6 @@ void t_20Hz_Event() {
     //Serial.println("CAN BUS sendMsgBuf ok!");
     //Serial.print("t_20Hz: ");
     //Serial.println(millis());
-
 }
 
 
@@ -317,12 +320,16 @@ void t_5Hz_Event() {
     int n_requested_raw = analogRead(A0);
     n_requested = round((float)n_requested_raw / ANALOG_Max_Value * RPM_Max_Value / RPM_Conv_Factor); 
     */
-
-    int n_requested_raw = analogRead(A0);
+    
+    int n_requested_raw = analogRead(POTI_READ);
     n_requested = round((float)n_requested_raw / 1023 * 72000 / 100);       //Read poti value and convert it to requested eBooster RPM
 
     DATA0x06d[2]  = (n_requested) & 0xFF;
     DATA0x06d[3]  = (n_requested >> 8) & 0x03;
+
+    pinMode(DCDC_RELAY, OUTPUT);
+    digitalWrite(DCDC_RELAY, Bat48V.CB_State);
+    Serial.println(Bat48V.CB_State);
 
 }
 
