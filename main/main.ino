@@ -192,7 +192,8 @@ void CanRxInterrupt(void) {
     CAN.readMsgBuf(&len, buf);
     canId = CAN.getCanId();
 
-    //Serial.println(canId, HEX);
+    Serial.println(canId, HEX);
+    Serial.println(canId);
     
 
     // Process the recived data
@@ -205,7 +206,7 @@ void CanRxInterrupt(void) {
         eBooster.I_act = buf[5];
         eBooster.Fault = buf[0] < 0 || buf[1] < 0;
 
-        //Serial.println("n eBooster = ");
+        Serial.println("n eBooster = ");
         //Serial.println(eBooster.n_act);
 
         break;
@@ -215,6 +216,8 @@ void CanRxInterrupt(void) {
 
         eBooster.T_act = (buf[2] - 32) * 5 / 9;
         eBooster.U_act = buf[3] * U_Conv_Factor;
+        
+        Serial.println("0x17b read");
         break;
 
     case Batt_Data1:
@@ -224,6 +227,8 @@ void CanRxInterrupt(void) {
         Bat48V.U_terminal = ( ((unsigned int)buf[2] << 8) | (unsigned int)buf[3]) * UI_Conv_Factor;
         Bat48V.I_act = ( ((unsigned long)buf[4] << 24) | ((unsigned long)buf[5] << 16) | 
                          ((unsigned long)buf[6] << 8)  | (unsigned long)buf[7]) * UI_Conv_Factor;
+
+        Serial.println("0x630 read");
         break;
     
     case Batt_Data2:
@@ -234,7 +239,9 @@ void CanRxInterrupt(void) {
         Bat48V.T_act = max(temp1, temp2) * T_Conv_Factor;
         Bat48V.SOC = buf[6];
         Bat48V.CB_State = buf[0] & 0xC0;
+
         Serial.println("0x631 read");
+    
         break;
 
     case Batt_PWR10:
