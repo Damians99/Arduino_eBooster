@@ -151,10 +151,10 @@ void setup() {
 
 
     U_Bat_PID.Start(Bat48V.U_terminal,              // input
-              0,                                    // current output
-              0);                                   // setpoint
+              40,                                   // current output
+              42);                                  // setpoint
 
-    U_Bat_PID.SetOutputLimits(0, 255);
+    U_Bat_PID.SetOutputLimits(0, 100);
     U_Bat_PID.SetSampleTime(Ts);
 
     // Initialise and setup CAN-Bus controller
@@ -332,7 +332,7 @@ void t_100Hz_Event() {
 /**************************************************************************/
 void t_20Hz_Event() {
 
-    if ((Bat48V.CB_State != 1) & millis() > 2000)
+    if ((Bat48V.CB_State != 1) & millis() > 1000)
     {
         Boot_48V_Bat();
     }
@@ -397,32 +397,19 @@ void t_5Hz_Event() {
 
 void Boot_48V_Bat(void){
 
-//    if ((Bat48V.U_terminal + 1.5) < Bat48V.U_cells)
-//    {
-//        DATA0x500[0] = 0;
-//        digitalWrite(DCDC_RELAY_PIN, HIGH);
-//        DATA0x666[0] = 1;
-//    }
-//
-//    else if ((Bat48V.U_terminal - 1.5) > Bat48V.U_cells)
-//    {
-//        DATA0x500[0] = 0;
-//        digitalWrite(DCDC_RELAY_PIN, LOW);
-//        DATA0x666[0] = 0;
-//    }
-
     U_Bat_PID.Setpoint(Bat48V.U_cells);
     const double input = Bat48V.U_terminal;
     const double output = U_Bat_PID.Run(input);
     analogWrite(DCDC_RELAY_PIN, output);
 
-    if (time_notice >= 2000)
+    if (time_notice >= 500)
     {
         DATA0x500[0] = 1;
+        analogWrite(DCDC_RELAY_PIN, 0);
     }
 
 
-    if ((Bat48V.U_terminal < (Bat48V.U_cells + 1)) & (Bat48V.U_terminal > (Bat48V.U_cells - 1)) & (Bat48V.U_terminal > 1))
+    if ((Bat48V.U_terminal < (Bat48V.U_cells + 2)) & (Bat48V.U_terminal > (Bat48V.U_cells - 2)) & (Bat48V.U_terminal > 1))
     {
         time_notice += 45;
     }
@@ -430,8 +417,8 @@ void Boot_48V_Bat(void){
     else
     {
         time_notice = 0;
+        DATA0x500[0] = 0;
     }
-    DATA0x666[1] = (char)(time_notice/10);
 }
 
 
