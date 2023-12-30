@@ -6,10 +6,16 @@
 #include <SPI.h>
 #include "mcp2515_can.h"
 #include <TaskScheduler.h>
+#include <PID_v2.h>
 
 
 #define POTI_READ_PIN A0
-#define DCDC_RELAY_PIN 7
+#define DCDC_RELAY_PIN 6
+
+// Specify the links and initial tuning parameters of voltage controller
+double Kp = 1.5, Ki = 2, Kd = 1, Ts = 100;
+PID_v2 U_Bat_PID(Kp, Ki, Kd, PID::Direct);
+
 
 //Global variabels from i/o pins
 int n_requested;
@@ -52,7 +58,9 @@ unsigned char buf[8];
 //eBooster control 100 Hz
 unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0}; 
 //Bat control 20 Hz
-unsigned char DATA0x500[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+unsigned char DATA0x500[2] = {0, 0};
+//Bat crash signal 20 Hz
+unsigned char DATA0x501 = {0};
 //Custom Diag Data
 unsigned char DATA0x666[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -138,8 +146,16 @@ void setup() {
 
     pinMode(DCDC_RELAY_PIN, OUTPUT);
     pinMode(POTI_READ_PIN, INPUT);
+    pinMode(A5, INPUT_PULLUP);
     Serial.println("I/O Pins initialized sucessfully");
 
+
+    U_Bat_PID.Start(Bat48V.U_terminal,              // input
+              0,                                    // current output
+              0);                                   // setpoint
+
+    U_Bat_PID.SetOutputLimits(0, 255);
+    U_Bat_PID.SetSampleTime(Ts);
 
     // Initialise and setup CAN-Bus controller
     Serial.begin(115200);
@@ -316,15 +332,24 @@ void t_100Hz_Event() {
 /**************************************************************************/
 void t_20Hz_Event() {
 
-    if (Bat48V.CB_State != 1)
+    if ((Bat48V.CB_State != 1) & millis() > 2000)
     {
         Boot_48V_Bat();
     }
 
 
-    
+    //Only use to tune controller parameters (Simulate step response)
+    //int Jump = digitalRead(A5);
+    //if(Jump > 0){Bat48V.U_cells = 20;}
+    //else{Bat48V.U_cells = 40;}
+    //U_Bat_PID.Setpoint(Bat48V.U_cells);
+    //const double input = Bat48V.U_terminal;
+    //const double output = U_Bat_PID.Run(input);
+    //analogWrite(DCDC_RELAY_PIN, output);
 
-    CAN.sendMsgBuf(0x500, 0, 8, DATA0x500);
+
+    CAN.sendMsgBuf(0x500, 0, 2, DATA0x500);
+    CAN.sendMsgBuf(0x501, 0, 1, DATA0x501);
     CAN.sendMsgBuf(0x666,0,8, DATA0x666);
     //Serial.println("CAN BUS sendMsgBuf ok!");
     //Serial.print("t_20Hz: ");
@@ -358,6 +383,13 @@ void t_5Hz_Event() {
     DATA0x06d[3]  = (n_requested >> 8) & 0x03;
 
     
+    //Only use to tune controller parameters
+    //const float Inte_val = exp((float)n_requested_raw / 1023 * 10)-1;
+    //U_Bat_PID.SetTunings(Kp, Inte_val, Kd);
+    //Serial.println(U_Bat_PID.GetKi());
+    //Serial.println();
+
+    
     //digitalWrite(DCDC_RELAY_PIN, Bat48V.CB_State);
     //Serial.println(Bat48V.CB_State);
 
@@ -365,27 +397,32 @@ void t_5Hz_Event() {
 
 void Boot_48V_Bat(void){
 
-    if ((Bat48V.U_terminal + 1.5) < Bat48V.U_cells)
-    {
-        DATA0x500[0] = 0;
-        digitalWrite(DCDC_RELAY_PIN, HIGH);
-        DATA0x666[0] = 1;
-    }
+//    if ((Bat48V.U_terminal + 1.5) < Bat48V.U_cells)
+//    {
+//        DATA0x500[0] = 0;
+//        digitalWrite(DCDC_RELAY_PIN, HIGH);
+//        DATA0x666[0] = 1;
+//    }
+//
+//    else if ((Bat48V.U_terminal - 1.5) > Bat48V.U_cells)
+//    {
+//        DATA0x500[0] = 0;
+//        digitalWrite(DCDC_RELAY_PIN, LOW);
+//        DATA0x666[0] = 0;
+//    }
 
-    else if ((Bat48V.U_terminal - 1.5) > Bat48V.U_cells)
-    {
-        DATA0x500[0] = 0;
-        digitalWrite(DCDC_RELAY_PIN, LOW);
-        DATA0x666[0] = 0;
-    }
+    U_Bat_PID.Setpoint(Bat48V.U_cells);
+    const double input = Bat48V.U_terminal;
+    const double output = U_Bat_PID.Run(input);
+    analogWrite(DCDC_RELAY_PIN, output);
 
-    else if (time_notice >= 2000)
+    if (time_notice >= 2000)
     {
         DATA0x500[0] = 1;
     }
 
 
-    if ((Bat48V.U_terminal < (Bat48V.U_cells + 1.5)) & (Bat48V.U_terminal > (Bat48V.U_cells - 1.5)))
+    if ((Bat48V.U_terminal < (Bat48V.U_cells + 1)) & (Bat48V.U_terminal > (Bat48V.U_cells - 1)) & (Bat48V.U_terminal > 1))
     {
         time_notice += 45;
     }
@@ -394,7 +431,7 @@ void Boot_48V_Bat(void){
     {
         time_notice = 0;
     }
-
+    DATA0x666[1] = (char)(time_notice/10);
 }
 
 
