@@ -13,13 +13,17 @@
 #define DCDC_RELAY_PIN 6
 
 // Specify the links and initial tuning parameters of voltage controller
-double Kp = 1.5, Ki = 2, Kd = 1, Ts = 100;
-PID_v2 U_Bat_PID(Kp, Ki, Kd, PID::Direct);
+double Kp1 = 1.5, Ki1 = 2, Kd1 = 1, Ts1 = 100;
+PID_v2 U_Bat_PID(Kp1, Ki1, Kd1, PID::Direct);
+
+// Specify the links and initial tuning parameters of current controller
+double Kp2 = 5, Ki2 = 2, Kd2 = 0, Ts2 = 100;
+PID_v2 I_Bat_PID(Kp2, Ki2, Kd2, PID::Direct);
 
 
 //Global variabels from i/o pins
 int n_requested;
-bool DCDC_Relay_State;
+float i_requested;
 long time_notice;
 
 
@@ -64,8 +68,8 @@ unsigned char DATA0x501 = {0};
 //Custom Diag Data
 unsigned char DATA0x666[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-//IDs to recive
 
+//IDs to recive definition according to DBC
 enum RxId {
     eBooster_h = 0x06b,
     eBooster_l = 0x17b,
@@ -74,7 +78,7 @@ enum RxId {
     Batt_PWR10 = 0x621
 };
 
-//Define converation factors
+//Define converation factors for incoming CAN Data (see DBC)
     // eBooster_h:
     const int RPM_Conv_Factor = 100;
     // eBooster_l:
@@ -85,6 +89,7 @@ enum RxId {
     const float T_Conv_Factor = 0.1f;
     // Batt_PWR10
 
+//Define Strocts to store incomming CAN Data
 struct ebooster {
     float I_act;
     float U_act;
@@ -113,10 +118,10 @@ bat48V Bat48V = {};
 
 void setup() {
 
-    eBooster.Fault = false;
+    eBooster.Fault = false;     //Set all faults to false
     Bat48V.Fault = false;
 
-
+    //Initialise TaskScheduler
     Serial.begin(115200);
     Serial.println("Scheduler TEST");
     
@@ -143,21 +148,29 @@ void setup() {
     t_Startup.enable();
     Serial.println("All Tasks enabled");
 
-
+    // Setup Arduion I/O Pins definitions
     pinMode(DCDC_RELAY_PIN, OUTPUT);
     pinMode(POTI_READ_PIN, INPUT);
     pinMode(A5, INPUT_PULLUP);
     Serial.println("I/O Pins initialized sucessfully");
 
-
+    // Setup controllers
     U_Bat_PID.Start(Bat48V.U_terminal,              // input
               40,                                   // current output
-              42);                                  // setpoint
+              42);                                  // setpoint (Voltage at terminal)
 
     U_Bat_PID.SetOutputLimits(0, 100);
-    U_Bat_PID.SetSampleTime(Ts);
+    U_Bat_PID.SetSampleTime(Ts1);
 
-    // Initialise and setup CAN-Bus controller
+    I_Bat_PID.Start(Bat48V.I_act,                   // input    
+                0,                                  // current output
+                0);                                 // setpoint (charching current)
+
+    I_Bat_PID.SetOutputLimits(0, 255);
+    I_Bat_PID.SetSampleTime(Ts2);
+
+
+    // Initialise and setup CAN-Bus shield
     Serial.begin(115200);
     while(!Serial); // wait for Serial
 
@@ -167,23 +180,20 @@ void setup() {
         delay(500);
     }
 
-    /* 
-        set mask, set both the mask to 0x3ff
-    */
-    CAN.init_Mask(0, 0, 0x3ff);                         // there are 2 mask in mcp2515, we need to set both of them to recive all
+  
+    //set mask for incomming data, set both the mask to 0x3ff
+    CAN.init_Mask(0, 0, 0x3ff);                                 // there are 2 mask in mcp2515, we need to set both of them to recive all
     CAN.init_Mask(1, 0, 0x3ff);
 
 
-    /*
-        set filter for all id's we will recive
-        there are 6 filter in mcp2515
-    */
-    CAN.init_Filt(0, 0, eBooster_h);                         // eBooster act. Values (RPM, Current....)
-    CAN.init_Filt(1, 0, Batt_Data2);                         // Battery Data 2 CB State, Temp....
+    //set filter for all id's we will recive there are 6 filter in mcp2515
 
-    CAN.init_Filt(2, 0, Batt_PWR10);                         // Battery 10s available charge/discaharge power 
-    CAN.init_Filt(3, 0, Batt_Data1);                         // Battery Data 1 Current, Voltage
-    CAN.init_Filt(4, 0, eBooster_l);                         // eBooster Temp and Voltage
+    CAN.init_Filt(0, 0, eBooster_h);                            // eBooster act. Values (RPM, Current....)
+    CAN.init_Filt(1, 0, Batt_Data2);                            // Battery Data 2 CB State, Temp....
+
+    CAN.init_Filt(2, 0, Batt_PWR10);                            // Battery 10s available charge/discaharge power 
+    CAN.init_Filt(3, 0, Batt_Data1);                            // Battery Data 1 Current, Voltage
+    CAN.init_Filt(4, 0, eBooster_l);                            // eBooster Temp and Voltage
 
     Serial.println("CAN init ok!");
 
@@ -306,7 +316,8 @@ void t_Startup_Event() {
 
 /**************************************************************************/
 /*!
-    @brief    Callback method of task2 - explain
+    @brief    Callback method of task 100_Hz_Event - Can id's that will be 
+              sent with a Frequence of 100Hz
     @param    none
     @returns  none
 */
@@ -317,6 +328,8 @@ void t_100Hz_Event() {
     //Serial.println("CAN BUS sendMsgBuf ok!");
     //Serial.print("t_100Hz: ");
     //Serial.println(millis());
+
+    Set_48V_charching_current(i_requested);   
      
 }
 
@@ -336,6 +349,7 @@ void t_20Hz_Event() {
     {
         Boot_48V_Bat();
     }
+
 
 
     //Only use to tune controller parameters (Simulate step response)
@@ -360,7 +374,7 @@ void t_20Hz_Event() {
 
 /**************************************************************************/
 /*!
-    @brief    Callback method of task3 - explain
+    @brief    5Hz Task, used to read analog pins and User inputs
     @param    none
     @returns  none
 */
@@ -378,15 +392,18 @@ void t_5Hz_Event() {
     
     int n_requested_raw = analogRead(POTI_READ_PIN);
     n_requested = round((float)n_requested_raw / 1023 * 72000 / 100);       //Read poti value and convert it to requested eBooster RPM
+    i_requested = exp((float)n_requested_raw / 1023 * 5)-1; 
 
     DATA0x06d[2]  = (n_requested) & 0xFF;
     DATA0x06d[3]  = (n_requested >> 8) & 0x03;
 
+    Serial.println(i_requested);
+
     
     //Only use to tune controller parameters
     //const float Inte_val = exp((float)n_requested_raw / 1023 * 10)-1;
-    //U_Bat_PID.SetTunings(Kp, Inte_val, Kd);
-    //Serial.println(U_Bat_PID.GetKi());
+    //U_Bat_PID.SetTunings(Kp1, Inte_val, Kd1);
+    //Serial.println(U_Bat_PID.GetKi1());
     //Serial.println();
 
     
@@ -395,14 +412,24 @@ void t_5Hz_Event() {
 
 }
 
+
+
+/**************************************************************************/
+/*!
+    @brief    Precharge the 48V System and boot the 48V Battery.
+              Voltage must be in -+ 2V Range of batery for 500ms to close Circuit Breaker.
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
 void Boot_48V_Bat(void){
 
-    U_Bat_PID.Setpoint(Bat48V.U_cells);
+    U_Bat_PID.Setpoint(Bat48V.U_cells);                 //Calculate new PWM by PID Controller
     const double input = Bat48V.U_terminal;
     const double output = U_Bat_PID.Run(input);
     analogWrite(DCDC_RELAY_PIN, output);
 
-    if (time_notice >= 500)
+    if (time_notice >= 500)                             //Check if condition was met the last 500ms
     {
         DATA0x500[0] = 1;
         analogWrite(DCDC_RELAY_PIN, 0);
@@ -411,13 +438,33 @@ void Boot_48V_Bat(void){
 
     if ((Bat48V.U_terminal < (Bat48V.U_cells + 2)) & (Bat48V.U_terminal > (Bat48V.U_cells - 2)) & (Bat48V.U_terminal > 1))
     {
-        time_notice += 45;
+        time_notice += 50;                              //Increment the timer by 50ms while condition met
     }
 
     else
     {
-        time_notice = 0;
+        time_notice = 0;                                //When out of +- 2V Range set timer to 0 and set open CB command
         DATA0x500[0] = 0;
+    }
+}
+
+
+/**************************************************************************/
+/*!
+    @brief    Set the charching current, integrated PID Current control
+    @param    current: Final charching current
+    @returns  none
+*/
+/**************************************************************************/
+void Set_48V_charching_current(const float current){
+
+    //Calculate new PWM by PID Controller
+    if (Bat48V.CB_State == 1)
+    {
+        I_Bat_PID.Setpoint(current);
+        const double input = min(Bat48V.I_act, Bat48V.I_chrg_avail);
+        const double output = I_Bat_PID.Run(input);
+        analogWrite(DCDC_RELAY_PIN, output);
     }
 }
 
