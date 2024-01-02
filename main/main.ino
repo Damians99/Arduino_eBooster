@@ -2,7 +2,7 @@
 /*
     This is a periodicaly can bus message sender script with Interrupt Reading
 */
-
+#include <stdint.h>
 #include <SPI.h>
 #include "mcp2515_can.h"
 #include <TaskScheduler.h>
@@ -11,6 +11,11 @@
 
 #define POTI_READ_PIN A0
 #define DCDC_RELAY_PIN 6
+
+//User defined Macro to send a CAN frame
+#define SEND_CAN_MESSAGE(msg) \
+    CAN.sendMsgBuf(msg.id, msg.extended, msg.length, msg.data.character)
+
 
 // Specify the links and initial tuning parameters of voltage controller
 double Kp1 = 1.5, Ki1 = 2, Kd1 = 1, Ts1 = 100;
@@ -51,22 +56,39 @@ const int SPI_CS_PIN = 9;
 
 mcp2515_can CAN(SPI_CS_PIN); // Set CS pin
 
-unsigned char len = 0;
-unsigned char buf[8];
 
+// Data of IDs to send
 
+union BytesUnion{
+ uint64_t int64;
+ uint32_t int32[2];
+ uint16_t int16[4];
+ uint8_t int8[8];
+ unsigned char character[8];
+};
 
+ struct  CAN_FRAME{
+ uint32_t id;               // 29 bit if ide set, 11 bit otherwise
+ uint32_t fid;              // family ID - used internally to library
+ uint8_t rtr;               // Remote Transmission Request (1 = RTR, 0 = data frame)
+ uint8_t priority;          // Priority but only for TX frames and optional (0-31)
+ uint8_t extended;          // Extended ID flag
+ uint32_t time;             // CAN timer value when mailbox message was received.
+ uint8_t length;            // Number of data bytes
+ BytesUnion data;           // 64 bytes - lots of ways to access it.
+};
 
-//Data of IDs to send
+//eBooster control TX Frame (100 Hz)
+CAN_FRAME eBooster_VEH_MSG_0x06d;
 
-//eBooster control 100 Hz
-unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0}; 
-//Bat control 20 Hz
-unsigned char DATA0x500[2] = {0, 0};
-//Bat crash signal 20 Hz
-unsigned char DATA0x501 = {0};
-//Custom Diag Data
-unsigned char DATA0x666[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+//Bat control TX Frame (20Hz)
+CAN_FRAME Bat48V_VEH_MSG_0x500;
+
+//Bat crash signal TX Frame (20Hz)
+CAN_FRAME Bat48V_VEH_CRASH_0x501;
+
+//Custom Diagnostic Data TX Frame (various frequence)
+CAN_FRAME Custom_Diag_Data_0x666;
 
 
 //IDs to recive definition according to DBC
@@ -89,7 +111,7 @@ enum RxId {
     const float T_Conv_Factor = 0.1f;
     // Batt_PWR10
 
-//Define Strocts to store incomming CAN Data
+//Define Structs to store incomming CAN Data
 struct ebooster {
     float I_act;
     float U_act;
@@ -120,6 +142,28 @@ void setup() {
 
     eBooster.Fault = false;     //Set all faults to false
     Bat48V.Fault = false;
+    
+    
+    eBooster_VEH_MSG_0x06d.id = 0x06d;
+    eBooster_VEH_MSG_0x06d.extended = 0;
+    eBooster_VEH_MSG_0x06d.length = 8;
+
+    Bat48V_VEH_MSG_0x500.id = 0x500;
+    Bat48V_VEH_MSG_0x500.extended = 0;
+    Bat48V_VEH_MSG_0x500.length = 2;
+
+    Bat48V_VEH_CRASH_0x501.id = 0x501;
+    Bat48V_VEH_CRASH_0x501.extended = 0;
+    Bat48V_VEH_CRASH_0x501.length = 1;
+    Bat48V_VEH_CRASH_0x501.data.int8[0] = 0x80;
+
+    Custom_Diag_Data_0x666.id = 0x666;
+    Custom_Diag_Data_0x666.extended = 0;
+    Custom_Diag_Data_0x666.length = 8;
+
+
+
+
 
     //Initialise TaskScheduler
     Serial.begin(115200);
@@ -226,28 +270,24 @@ void loop() {
     @returns  none
 */
 /**************************************************************************/
-
 void CanRxInterrupt(void) {
+    CAN_FRAME MsgIN;
+    
+    CAN.readMsgBuf(&MsgIN.length, MsgIN.data.character);
+    MsgIN.id = CAN.getCanId();
 
-    unsigned char len;
-    unsigned char buf[8];
-    unsigned int canId;
-
-
-    CAN.readMsgBuf(&len, buf);
-    canId = CAN.getCanId();
 
     //Serial.println(canId, HEX);
     //Serial.println(canId);
     
 
     // Process the recived data
-        switch (canId) {
+        switch (MsgIN.id) {
 
         case eBooster_h:
-            eBooster.n_act = (( (unsigned long)(buf[4] & 0x03) << 8) | (unsigned long)buf[3]) * RPM_Conv_Factor;
-            eBooster.I_act = buf[5];
-            eBooster.Fault = buf[0] < 0 || buf[1] < 0;
+            eBooster.n_act = (( (unsigned long)(MsgIN.data.int8[4] & 0x03) << 8) | (unsigned long)MsgIN.data.int8[3]) * RPM_Conv_Factor;
+            eBooster.I_act = MsgIN.data.int8[5];
+            eBooster.Fault = MsgIN.data.int16[0] < 0;
 
             //Serial.println("0x06b read");
             //Serial.println("n eBooster = ");
@@ -256,36 +296,36 @@ void CanRxInterrupt(void) {
             break;
 
         case eBooster_l:
-            eBooster.T_act = (buf[2] - 32) * 5 / 9;
-            eBooster.U_act = buf[3] * U_Conv_Factor;
+            eBooster.T_act = (MsgIN.data.int8[2] - 32) * 5 / 9;
+            eBooster.U_act = MsgIN.data.int8[3] * U_Conv_Factor;
 
             //Serial.println("0x17b read");
             break;
 
         case Batt_Data1:
-            Bat48V.U_cells = ( ((unsigned int)buf[0] << 8) | (unsigned int)buf[1]) * UI_Conv_Factor;
-            Bat48V.U_terminal = ( ((unsigned int)buf[2] << 8) | (unsigned int)buf[3]) * UI_Conv_Factor;
-            Bat48V.I_act = (signed long)( ((unsigned long)buf[4] << 24) | ((unsigned long)buf[5] << 16) | 
-                                 ((unsigned long)buf[6] << 8)  | (unsigned long)buf[7]) * UI_Conv_Factor;
+            Bat48V.U_cells = ( ((unsigned int)MsgIN.data.int8[0] << 8) | (unsigned int)MsgIN.data.int8[1]) * UI_Conv_Factor;
+            Bat48V.U_terminal = ( ((unsigned int)MsgIN.data.int8[2] << 8) | (unsigned int)MsgIN.data.int8[3]) * UI_Conv_Factor;
+            Bat48V.I_act = (signed long)( ((unsigned long)MsgIN.data.int8[4] << 24) | ((unsigned long)MsgIN.data.int8[5] << 16) | 
+                                 ((unsigned long)MsgIN.data.int8[6] << 8)  | (unsigned long)MsgIN.data.int8[7]) * UI_Conv_Factor;
 
             //Serial.println("0x630 read");
-            //Serial.println(Bat48V.U_terminal);
+            //Serial.println(Bat48V.I_act);
             break;
 
         case Batt_Data2:
-            int temp1 = ((unsigned int)(buf[0] & 0x07) << 8) | (unsigned int)buf[1];
-            int temp2 = ((unsigned int)(buf[2] & 0x07) << 8) | (unsigned int)buf[3];
+            int temp1 = ((unsigned int)(MsgIN.data.int8[0] & 0x07) << 8) | (unsigned int)MsgIN.data.int8[1];
+            int temp2 = ((unsigned int)(MsgIN.data.int8[2] & 0x07) << 8) | (unsigned int)MsgIN.data.int8[3];
             Bat48V.T_act = max(temp1, temp2) * T_Conv_Factor;
-            Bat48V.SOC = buf[6];
-            Bat48V.CB_State = buf[0] >> 6;
+            Bat48V.SOC = MsgIN.data.int8[6];
+            Bat48V.CB_State = MsgIN.data.int8[0] >> 6;
 
             //Serial.println("0x631 read");
 
             break;
 
         case Batt_PWR10:
-            Bat48V.I_chrg_avail = ((unsigned int)buf[0] << 2) | ((unsigned int)(buf[1] & 0xC0) >> 6);
-            Bat48V.I_dschrg_avail = ((unsigned int)buf[3] << 2) | ((unsigned int)(buf[4] & 0xC0) >> 6);
+            Bat48V.I_chrg_avail = ((unsigned int)MsgIN.data.int8[0] << 2) | ((unsigned int)(MsgIN.data.int8[1] & 0xC0) >> 6);
+            Bat48V.I_dschrg_avail = ((unsigned int)MsgIN.data.int8[3] << 2) | ((unsigned int)(MsgIN.data.int8[4] & 0xC0) >> 6);
             break;
 
         default:
@@ -324,12 +364,11 @@ void t_Startup_Event() {
 /**************************************************************************/
 void t_100Hz_Event() {
 
-    CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
+    SEND_CAN_MESSAGE(eBooster_VEH_MSG_0x06d);
     //Serial.println("CAN BUS sendMsgBuf ok!");
     //Serial.print("t_100Hz: ");
     //Serial.println(millis());
 
-    Set_48V_charching_current(i_requested);   
      
 }
 
@@ -350,7 +389,7 @@ void t_20Hz_Event() {
         Boot_48V_Bat();
     }
 
-
+    Set_48V_charching_current(i_requested);
 
     //Only use to tune controller parameters (Simulate step response)
     //int Jump = digitalRead(A5);
@@ -362,9 +401,9 @@ void t_20Hz_Event() {
     //analogWrite(DCDC_RELAY_PIN, output);
 
 
-    CAN.sendMsgBuf(0x500, 0, 2, DATA0x500);
-    CAN.sendMsgBuf(0x501, 0, 1, DATA0x501);
-    CAN.sendMsgBuf(0x666,0,8, DATA0x666);
+    SEND_CAN_MESSAGE(Bat48V_VEH_MSG_0x500);
+    SEND_CAN_MESSAGE(Bat48V_VEH_CRASH_0x501);
+    SEND_CAN_MESSAGE(Custom_Diag_Data_0x666);
     //Serial.println("CAN BUS sendMsgBuf ok!");
     //Serial.print("t_20Hz: ");
     //Serial.println(millis());
@@ -394,10 +433,10 @@ void t_5Hz_Event() {
     n_requested = round((float)n_requested_raw / 1023 * 72000 / 100);       //Read poti value and convert it to requested eBooster RPM
     i_requested = exp((float)n_requested_raw / 1023 * 5)-1; 
 
-    DATA0x06d[2]  = (n_requested) & 0xFF;
-    DATA0x06d[3]  = (n_requested >> 8) & 0x03;
+    eBooster_VEH_MSG_0x06d.data.int16[1] = n_requested;
+ 
 
-    Serial.println(i_requested);
+    //Serial.println(i_requested);
 
     
     //Only use to tune controller parameters
@@ -431,7 +470,7 @@ void Boot_48V_Bat(void){
 
     if (time_notice >= 500)                             //Check if condition was met the last 500ms
     {
-        DATA0x500[0] = 1;
+        Bat48V_VEH_MSG_0x500.data.int8[0] = 1;
         analogWrite(DCDC_RELAY_PIN, 0);
     }
 
@@ -444,7 +483,7 @@ void Boot_48V_Bat(void){
     else
     {
         time_notice = 0;                                //When out of +- 2V Range set timer to 0 and set open CB command
-        DATA0x500[0] = 0;
+        Bat48V_VEH_MSG_0x500.data.int8[0] = 0;
     }
 }
 
@@ -460,13 +499,28 @@ void Set_48V_charching_current(const float current){
 
     //Calculate new PWM by PID Controller
     if (Bat48V.CB_State == 1)
-    {
-        I_Bat_PID.Setpoint(current);
-        const double input = min(Bat48V.I_act, Bat48V.I_chrg_avail);
+    {   
+        const float current_requested min(current, Bat48V.I_chrg_avail);
+        I_Bat_PID.Setpoint(current_requested);
+        const double input = Bat48V.I_act;
         const double output = I_Bat_PID.Run(input);
         analogWrite(DCDC_RELAY_PIN, output);
     }
 }
 
 
+
+/**************************************************************************/
+/*!
+    @brief    Stops the ebooster turning(if not allready happen) and resets error states
+              (necessary on every startup to start idle or any other shaft speed)
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
+void Reset_ebooster_Fault(void){
+    unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0}; 
+
+    CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
+}
 // END FILE
