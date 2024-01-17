@@ -17,12 +17,15 @@
     CAN.sendMsgBuf(msg.id, msg.extended, msg.length, msg.data.character)
 
 
+
 // Specify the links and initial tuning parameters of voltage controller
 double Kp1 = 1.5, Ki1 = 2, Kd1 = 1, Ts1 = 100;
+//Battery terminal PID voltage controller
 PID_v2 U_Bat_PID(Kp1, Ki1, Kd1, PID::Direct);
 
 // Specify the links and initial tuning parameters of current controller
-double Kp2 = 5, Ki2 = 2, Kd2 = 0, Ts2 = 100;
+double Kp2 = 7, Ki2 = 5, Kd2 = 0, Ts2 = 100;
+//Battery charching PID current controller
 PID_v2 I_Bat_PID(Kp2, Ki2, Kd2, PID::Direct);
 
 
@@ -48,8 +51,8 @@ Task t_5Hz(1000/5, TASK_FOREVER, &t_5Hz_Event);
 Scheduler scheduler;
 
 
-// Set SPI CS Pin according to your hardware
-// For Arduino MCP2515 Hat:
+// Set SPI CS Pin according to used hardware
+// For Arduino MCP2515 Shield:
 // SPI_CS Pin: D9
 
 const int SPI_CS_PIN = 9;
@@ -58,7 +61,6 @@ mcp2515_can CAN(SPI_CS_PIN); // Set CS pin
 
 
 // Data of IDs to send
-
 union BytesUnion{
  uint64_t int64;
  uint32_t int32[2];
@@ -120,7 +122,9 @@ struct ebooster {
     bool Fault;  
 };
 
+//Actual values recived from ebooster
 ebooster eBooster = {}; 
+
 
 struct bat48V {
     float I_act;
@@ -134,16 +138,21 @@ struct bat48V {
     bool Fault;
 };
 
+//Actual values recived from 48V Battery
 bat48V Bat48V = {};
 
 
 
+
 void setup() {
+    Serial.begin(115200);
+
 
     eBooster.Fault = false;     //Set all faults to false
     Bat48V.Fault = false;
     
     
+    //define initial values of can frame 
     eBooster_VEH_MSG_0x06d.id = 0x06d;
     eBooster_VEH_MSG_0x06d.extended = 0;
     eBooster_VEH_MSG_0x06d.length = 8;
@@ -163,10 +172,7 @@ void setup() {
 
 
 
-
-
     //Initialise TaskScheduler
-    Serial.begin(115200);
     Serial.println("Scheduler TEST");
     
     scheduler.init();
@@ -184,7 +190,7 @@ void setup() {
     scheduler.addTask(t_Startup);
     Serial.println("added t_Startup");
 
-    delay(1000);
+    delay(500);
     
     t_100Hz.enable();
     t_20Hz.enable();
@@ -192,7 +198,7 @@ void setup() {
     t_Startup.enable();
     Serial.println("All Tasks enabled");
 
-    // Setup Arduion I/O Pins definitions
+    // Setup Arduino I/O Pins definitions
     pinMode(DCDC_RELAY_PIN, OUTPUT);
     pinMode(POTI_READ_PIN, INPUT);
     pinMode(A5, INPUT_PULLUP);
@@ -432,6 +438,7 @@ void t_5Hz_Event() {
     int n_requested_raw = analogRead(POTI_READ_PIN);
     n_requested = round((float)n_requested_raw / 1023 * 72000 / 100);       //Read poti value and convert it to requested eBooster RPM
     i_requested = exp((float)n_requested_raw / 1023 * 5)-1; 
+    Custom_Diag_Data_0x666.data.int8[0] = uint8_t(i_requested*10);
 
     eBooster_VEH_MSG_0x06d.data.int16[1] = n_requested;
  
@@ -500,11 +507,24 @@ void Set_48V_charching_current(const float current){
     //Calculate new PWM by PID Controller
     if (Bat48V.CB_State == 1)
     {   
-        const float current_requested min(current, Bat48V.I_chrg_avail);
+        //const float current_requested min(current, Bat48V.I_chrg_avail);
+        const float current_requested = current;
         I_Bat_PID.Setpoint(current_requested);
         const double input = Bat48V.I_act;
         const double output = I_Bat_PID.Run(input);
-        analogWrite(DCDC_RELAY_PIN, output);
+
+        if(current <= 0.5){
+            analogWrite(DCDC_RELAY_PIN, 0);
+            
+            }
+        else{analogWrite(DCDC_RELAY_PIN, output);}
+
+
+        
+        
+
+        Custom_Diag_Data_0x666.data.int8[1] = uint8_t(output);
+        Serial.println(output);
     }
 }
 
@@ -518,9 +538,59 @@ void Set_48V_charching_current(const float current){
     @returns  none
 */
 /**************************************************************************/
-void Reset_ebooster_Fault(void){
-    unsigned char DATA0x06d[8] = {0, 0, 0, 0, 0, 0, 0, 0}; 
+void ebooster_reset_fault(void){
+    unsigned char DATA0x06d[8] = {0, 0, 0x03, 0x00, 0, 0, 0, 0}; 
 
     CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
+    CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
+    CAN.sendMsgBuf(0x06d, 0, 8, DATA0x06d);
 }
+
+
+/**************************************************************************/
+/*!
+    @brief    n_set of the eBooster will be set to idle speed (normal operation in standby)
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
+void ebooster_idle_speed(void){
+
+    eBooster_VEH_MSG_0x06d.data.int8[2] = 0x20;
+    eBooster_VEH_MSG_0x06d.data.int8[3] = eBooster_VEH_MSG_0x06d.data.int8[3] & 0b11111100; 
+    
+
+    //DATA0x06d[8] = {0, 0, 0x20, 0x00, 0, 0, 0, 0}; 
+}
+
+
+/**************************************************************************/
+/*!
+    @brief    Sets the requested speed of the eBooster(n_set in RPM (6'000-80'000)) 
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
+void ebooster_set_speed(int16_t rpm_speed){
+    
+    rpm_speed = round((float)rpm_speed / 100);
+
+    eBooster_VEH_MSG_0x06d.data.int16[1] = rpm_speed;
+    
+    }
+
+
+/**************************************************************************/
+/*!
+    @brief    Sets the maximal current the ebooster can use in ampere
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
+void ebooster_set_max_current(int8_t I_max){
+
+    eBooster_VEH_MSG_0x06d.data.int16[7] = I_max;
+    
+    }
+
 // END FILE
