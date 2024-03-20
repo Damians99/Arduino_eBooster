@@ -1,12 +1,15 @@
 
+
 /*
     This is a periodicaly can bus message sender script with Interrupt Reading
 */
+
 #include <stdint.h>
 #include <SPI.h>
 #include "mcp2515_can.h"
 #include <TaskScheduler.h>
 #include <PID_v2.h>
+#include <OBD2.h>
 
 
 #define POTI_READ_PIN A0
@@ -29,10 +32,11 @@ double Kp2 = 7, Ki2 = 5, Kd2 = 0, Ts2 = 100;
 PID_v2 I_Bat_PID(Kp2, Ki2, Kd2, PID::Direct);
 
 
-//Global variabels from i/o pins
+//Global variabels (from i/o pins and other storage)
 int n_requested;
 float i_requested;
-long time_notice;
+long time_notice;       //time used to unlock batery air's on command
+float tps_act;
 
 
 // Callback methods prototypes
@@ -397,6 +401,8 @@ void t_20Hz_Event() {
 
     Set_48V_charching_current(i_requested);
 
+    car_read_obd2();
+
     //Only use to tune controller parameters (Simulate step response)
     //int Jump = digitalRead(A5);
     //if(Jump > 0){Bat48V.U_cells = 20;}
@@ -591,6 +597,20 @@ void ebooster_set_max_current(int8_t I_max){
 
     eBooster_VEH_MSG_0x06d.data.int16[7] = I_max;
     
+    }
+
+
+/**************************************************************************/
+/*!
+    @brief    Read actual values from an OBD2 Protocol
+    @param    none
+    @returns  none
+*/
+/**************************************************************************/
+void car_read_obd2(void){
+
+    tps_act = OBD2.pidRead(THROTTLE_POSITION);
+
     }
 
 // END FILE
